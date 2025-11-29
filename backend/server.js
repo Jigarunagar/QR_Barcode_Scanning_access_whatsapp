@@ -1,19 +1,26 @@
 const express = require("express");
-
-const { Client, LocalAuth } = require("whatsapp-web.js");
-LocalAuth.prototype.logout = () => Promise.resolve();
-
+const { Client, LocalAuth, MessageMedia } = require("whatsapp-web.js");
 const qrcode = require("qrcode");
+const cors = require("cors");
+const multer = require("multer");
+const fs = require("fs");
 
 const app = express();
+const upload = multer({ dest: "uploads/" });
+app.use(cors());
 app.use(express.json());
 
 const PORT = 3000;
 
-let qrCodeString = "";
-let isReady = false;
-let clients = [];
 let client = null;
+let isReady = false;
+let qrCodeString = "";
+let clients = [];
+
+
+function sendStatus(msg) {
+    clients.forEach((res) => res.write(`data: ${msg}\n\n`));
+}
 
 function createClient() {
     console.log("Creating WhatsApp Client...");
@@ -22,16 +29,15 @@ function createClient() {
         authStrategy: new LocalAuth({ clientId: "client-main" }),
         puppeteer: {
             headless: true,
-            args: ["--no-sandbox", "--disable-setuid-sandbox"]
-        }
+            args: ["--no-sandbox", "--disable-setuid-sandbox"],
+        },
     });
 
     client.on("qr", async (qr) => {
-        if (!isReady) {
-            qrCodeString = await qrcode.toDataURL(qr);
-            sendStatus("qr");
-            console.log("New QR Generated!");
-        }
+        isReady = false;
+        qrCodeString = await qrcode.toDataURL(qr);
+        sendStatus("qr");
+        console.log("New QR Generated!");
     });
 
     client.on("ready", () => {
@@ -44,42 +50,45 @@ function createClient() {
     client.on("authenticated", () => console.log("Authenticated!"));
 
     client.on("auth_failure", () => {
-        console.log("Authentication failed!");
-        regenerateClient();
+        console.log("Authentication failed! Regenerating client...");
+        safeRegenerateClient();
     });
 
     client.on("disconnected", (reason) => {
         console.log("Phone Disconnected:", reason);
-
         isReady = false;
         qrCodeString = "";
         sendStatus("qr");
-
-        regenerateClient(); 
+        safeRegenerateClient();
     });
 
     client.initialize();
 }
 
-function regenerateClient() {
+
+let regenerating = false;
+
+function safeRegenerateClient() {
+    if (regenerating) return;
+    regenerating = true;
+
     console.log("Reinitializing WhatsApp client...");
 
-    try {
-        if (client) client.destroy(); 
-    } catch {}
-
-    client = null;
+    if (client) {
+        try {
+            client.destroy();
+        } catch (err) {
+            console.log("Error destroying client:", err.message);
+        }
+        client = null;
+    }
 
     setTimeout(() => {
         createClient();
-    }, 800); 
+        regenerating = false;
+    }, 5000); 
 }
 
-createClient();
-
-function sendStatus(msg) {
-    clients.forEach((res) => res.write(`data: ${msg}\n\n`));
-}
 
 app.get("/status", (req, res) => {
     res.setHeader("Content-Type", "text/event-stream");
@@ -90,7 +99,7 @@ app.get("/status", (req, res) => {
     clients.push(res);
 
     req.on("close", () => {
-        clients = clients.filter(c => c !== res);
+        clients = clients.filter((c) => c !== res);
     });
 });
 
@@ -99,16 +108,14 @@ app.get("/qr", (req, res) => {
         <div style="text-align:center; margin-top:40px;">
             <h2>WhatsApp Status</h2>
             <div id="qrContainer">
-                ${!isReady && qrCodeString ? `<img src="${qrCodeString}" width="250" />` : ""}
+                ${!isReady && qrCodeString ? `<img src="${qrCodeString}" width="250"/>` : ""}
             </div>
             <h3 id="statusText">${isReady ? "Connected!" : "Disconnected"}</h3>
-
             <script>
                 const events = new EventSource("/status");
                 events.onmessage = function(e) {
                     const qrContainer = document.getElementById("qrContainer");
                     const statusText = document.getElementById("statusText");
-
                     if (e.data === "connected") {
                         qrContainer.innerHTML = "";
                         statusText.innerText = "Connected!";
@@ -121,17 +128,26 @@ app.get("/qr", (req, res) => {
     `);
 });
 
-app.post("/send", async (req, res) => {
-    if (!isReady) return res.send("WhatsApp not connected!");
+app.post("/send", upload.single("file"), async (req, res) => {
+    if (!isReady) return res.status(400).send("WhatsApp not connected!");
 
     const { number, message } = req.body;
     const finalNumber = number.includes("@c.us") ? number : number + "@c.us";
+    const filePath = req.file ? req.file.path : null;
 
     try {
-        await client.sendMessage(finalNumber, message);
-        res.send("Message Sent!");
-    } catch (e) {
-        res.send("Failed: " + e.message);
+        if (!filePath) {
+            await client.sendMessage(finalNumber, message);
+            return res.send("Text Message Sent!");
+        }
+
+        const media = MessageMedia.fromFilePath(filePath);
+        await client.sendMessage(finalNumber, media, { caption: message });
+        res.send("Media Sent!");
+    } catch (err) {
+        res.status(500).send("Failed: " + err.message);
+    } finally {
+        if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
 });
 
@@ -141,20 +157,19 @@ app.get("/logout", async (req, res) => {
         qrCodeString = "";
 
         if (client) client.destroy();
-
         client = null;
 
-        setTimeout(() => {
-            createClient();
-        }, 800);
+        safeRegenerateClient();
 
         res.send("Logged out! QR regenerating...");
     } catch (err) {
-        res.send("Error: " + err.message);
+        res.status(500).send("Error: " + err.message);
     }
 });
 
 app.listen(PORT, () => {
     console.log(`Server running: http://localhost:${PORT}`);
-    console.log(`Open QR: http://localhost:${PORT}/qr`);
+    console.log(`Open QR page: http://localhost:${PORT}/qr`);
 });
+
+createClient();

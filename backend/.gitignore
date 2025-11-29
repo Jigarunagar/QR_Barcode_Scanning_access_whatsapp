@@ -23,3 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 .env
+# flie
+.wwebjs_auth
+.wwebjs_cache

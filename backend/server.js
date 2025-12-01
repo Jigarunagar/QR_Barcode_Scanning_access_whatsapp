@@ -40,11 +40,23 @@ function createClient() {
     });
 
     client.on("ready", () => {
-        isReady = true;
-        qrCodeString = "";
-        sendStatus("connected");
-        console.log("WhatsApp Connected!");
-    });
+    isReady = true;
+    qrCodeString = "";
+
+    // GET USER INFO
+    const myName = client.info.pushname || "Unknown User";
+    
+
+    // SEND DATA TO FRONTEND
+    sendStatus(JSON.stringify({
+        type: "user-info",
+        name: myName,
+    }));
+
+    sendStatus("connected");
+
+    console.log("Connected as:", myName, myNumber);
+});
 
     client.on("authenticated", () => console.log("Authenticated!"));
 
@@ -82,7 +94,7 @@ function safeRegenerateClient() {
 
     if (client) {
         try {
-            client.destroy(); 
+            client.destroy();
         } catch (err) {
             console.log("Error destroying client:", err.message);
         }
@@ -136,40 +148,96 @@ app.get("/qr", (req, res) => {
 app.post("/send", upload.single("file"), async (req, res) => {
     if (!isReady) return res.status(400).send("WhatsApp not connected!");
 
-    const { number, message } = req.body;
+    const { number, message, type, quotedId } = req.body;
     const finalNumber = number.includes("@c.us") ? number : number + "@c.us";
     const filePath = req.file ? req.file.path : null;
 
     try {
-        if (!filePath) {
-            await client.sendMessage(finalNumber, message);
+        let msgObj;
 
-            sendStatus(JSON.stringify({
-                type: "outgoing",
-                to: finalNumber,
-                body: message
-            }));
-
-            return res.send("Text Message Sent!");
+        // Sending media or text
+        if (filePath) {
+            const media = MessageMedia.fromFilePath(filePath);
+            msgObj = await client.sendMessage(finalNumber, media, { caption: message });
+        } else {
+            if (quotedId) {
+                const quotedMsg = await client.getMessageById(quotedId);
+                msgObj = await quotedMsg.reply(message);
+            } else {
+                msgObj = await client.sendMessage(finalNumber, message);
+            }
         }
-
-        const media = MessageMedia.fromFilePath(filePath);
-        await client.sendMessage(finalNumber, media, { caption: message });
 
         sendStatus(JSON.stringify({
             type: "outgoing",
             to: finalNumber,
             body: message,
-            media: true
+            media: !!filePath,
+            id: msgObj.id._serialized
         }));
 
-        res.send("Media Sent!");
+        res.send("Message Sent!");
     } catch (err) {
         res.status(500).send("Failed: " + err.message);
     } finally {
         if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
 });
+
+app.post("/reply", async (req, res) => {
+    const { number, message, quotedId } = req.body;
+    if (!isReady) return res.status(400).send("WhatsApp not connected!");
+
+    try {
+        const quotedMsg = await client.getMessageById(quotedId);
+        await quotedMsg.reply(message);
+
+        res.send("Replied successfully!");
+    } catch (err) {
+        res.status(500).send(err.message);
+    }
+});
+
+app.post("/forward", async (req, res) => {
+    const { number, messageId } = req.body;
+    const finalNumber = number.includes("@c.us") ? number : number + "@c.us";
+
+    try {
+        const msg = await client.getMessageById(messageId);
+        await msg.forward(finalNumber);
+
+        res.send("Message forwarded!");
+    } catch (err) {
+        res.status(500).send(err.message);
+    }
+});
+
+app.post("/delete", async (req, res) => {
+    const { messageId, everyone } = req.body;
+
+    try {
+        const msg = await client.getMessageById(messageId);
+        await msg.delete(everyone); // true for everyone, false for self
+
+        res.send("Message deleted!");
+    } catch (err) {
+        res.status(500).send(err.message);
+    }
+});
+
+app.post("/react", async (req, res) => {
+    const { messageId, emoji } = req.body;
+
+    try {
+        const msg = await client.getMessageById(messageId);
+        await msg.react(emoji);
+
+        res.send("Reaction sent!");
+    } catch (err) {
+        res.status(500).send(err.message);
+    }
+});
+
 
 app.get("/logout", async (req, res) => {
     try {

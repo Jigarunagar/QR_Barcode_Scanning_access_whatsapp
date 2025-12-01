@@ -1,14 +1,14 @@
 /* MAIN WRAPPER */
 .wa-main {
   display: flex;
-  height: 100vh;
+  height: 565px;
   background: #e5ddd5;
   font-family: "Segoe UI", sans-serif;
+  border: 1px solid #abb7b2;
 }
 
-/* LEFT SIDEBAR */
 .wa-sidebar {
-  width: 30%;
+  width: 25%;
   background: #ffffff;
   border-right: 1px solid #d1d1d1;
   display: flex;
@@ -57,7 +57,12 @@
 
 .not-ok {
   background: #f8d7da;
-  color: #721c24;
+  color: #46050b;
+}
+
+.font-image {
+  /* width: 100px; */
+  height: 100px;
 }
 
 /* QR Code Area */
@@ -82,29 +87,21 @@
 
 /* RIGHT CHAT AREA */
 .wa-chat-area {
-  width: 70%;
+  width: 75%;
   display: flex;
   flex-direction: column;
   background: #f0f2f5;
 }
 
-/* Chat Header */
-.chat-header {
-  background: #ededed;
-  padding: 18px;
-  font-size: 18px;
-  font-weight: bold;
-  border-bottom: 1px solid #d1d1d1;
-}
 
 /* Chat Content */
 .chat-content {
   flex-grow: 1;
-  padding: 20px;
-  overflow-y: auto;
+  padding-top: 12px;
+  overflow-y: scroll;
   display: flex;
   flex-direction: column;
-  background: #efeae2;
+  background-image: url(./assets/back.png);
 }
 
 /* Chat Bubbles */
@@ -128,7 +125,6 @@
   border-radius: 12px 0 12px 12px;
 }
 
-/* Input Box */
 .chat-input-box {
   padding: 15px;
   background: #ededed;
@@ -159,4 +155,113 @@
 
 .chat-input-box button:hover {
   opacity: 0.9;
+}
+
+.bubble-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+  opacity: 0;
+  transition: 0.2s ease-in-out;
+}
+
+.chat-bubble:hover .bubble-actions {
+  opacity: 1;
+}
+
+.bubble-actions button {
+  background: #f0f2f5;
+  border: 1px solid #ddd;
+  padding: 3px 8px;
+  font-size: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.bubble-actions button:hover {
+  background: #e1e4e6;
+}
+
+.bubble-actions button:nth-child(1) {
+  color: #1a73e8;
+  border-color: #1a73e8;
+}
+
+.bubble-actions button:nth-child(1):hover {
+  background: rgba(26, 115, 232, 0.15);
+}
+
+.bubble-actions button:nth-child(2) {
+  color: #0a915f;
+  border-color: #0a915f;
+}
+
+.bubble-actions button:nth-child(2):hover {
+  background: rgba(10, 145, 95, 0.15);
+}
+
+.bubble-actions button:nth-child(3) {
+  color: #e53935;
+  border-color: #e53935;
+}
+
+.bubble-actions button:nth-child(3):hover {
+  background: rgba(229, 57, 53, 0.15);
+}
+
+.bubble-actions button:nth-child(4) {
+  color: #ff9800;
+  border-color: #ff9800;
+}
+
+.bubble-actions button:nth-child(4):hover {
+  background: rgba(255, 152, 0, 0.15);
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  font-family: 'Arial', sans-serif;
+  color: #333;
+  background: #ededed;
+  padding: 15px;
+  font-size: 15px;
+  font-weight: bold;
+  border-bottom: 1px solid #d1d1d1;
+}
+
+.chat-header h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-weight: 500;
+}
+
+.chat-header h3 svg {
+  width: 30px;
+  height: 30px;
+  color: #555;
+}
+
+.chat-default-image {
+  display: flex;
+
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  /* margin-top: 50px; */
+  color: #555;
+}
+
+.chat-default-image img {
+  width: 440px;
+  border-radius: 5%;
+  border: 2px solid #ccc;
+}
+
+.chat-default-image p {
+  font-size: 16px;
+  text-align: center;
 }

@@ -17,7 +17,6 @@ let isReady = false;
 let qrCodeString = "";
 let clients = [];
 
-
 function sendStatus(msg) {
     clients.forEach((res) => res.write(`data: ${msg}\n\n`));
 }
@@ -62,9 +61,16 @@ function createClient() {
         safeRegenerateClient();
     });
 
+    client.on("message", (msg) => {
+        sendStatus(JSON.stringify({
+            type: "incoming",
+            from: msg.from,
+            body: msg.body
+        }));
+    });
+
     client.initialize();
 }
-
 
 let regenerating = false;
 
@@ -76,7 +82,7 @@ function safeRegenerateClient() {
 
     if (client) {
         try {
-            client.destroy();
+            client.destroy(); 
         } catch (err) {
             console.log("Error destroying client:", err.message);
         }
@@ -86,9 +92,8 @@ function safeRegenerateClient() {
     setTimeout(() => {
         createClient();
         regenerating = false;
-    }, 5000); 
+    }, 5000);
 }
-
 
 app.get("/status", (req, res) => {
     res.setHeader("Content-Type", "text/event-stream");
@@ -138,11 +143,26 @@ app.post("/send", upload.single("file"), async (req, res) => {
     try {
         if (!filePath) {
             await client.sendMessage(finalNumber, message);
+
+            sendStatus(JSON.stringify({
+                type: "outgoing",
+                to: finalNumber,
+                body: message
+            }));
+
             return res.send("Text Message Sent!");
         }
 
         const media = MessageMedia.fromFilePath(filePath);
         await client.sendMessage(finalNumber, media, { caption: message });
+
+        sendStatus(JSON.stringify({
+            type: "outgoing",
+            to: finalNumber,
+            body: message,
+            media: true
+        }));
+
         res.send("Media Sent!");
     } catch (err) {
         res.status(500).send("Failed: " + err.message);

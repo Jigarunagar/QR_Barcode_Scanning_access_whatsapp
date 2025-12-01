@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import axios from "axios";
 
 function HomePage() {
@@ -7,21 +7,40 @@ function HomePage() {
   const [number, setNumber] = useState("");
   const [message, setMessage] = useState("");
   const [file, setFile] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const messagesEndRef = useRef(null);
 
-  // Fetch QR and listen to status
   useEffect(() => {
+    const savedStatus = localStorage.getItem("wa_status");
+    if (savedStatus) {
+      setStatus(savedStatus);
+    }
+
     const events = new EventSource("http://localhost:3000/status");
+
     events.onmessage = (e) => {
+
       if (e.data === "connected") {
         setStatus("Connected");
+        localStorage.setItem("wa_status", "Connected");
         setQr("");
-      } else if (e.data === "qr") {
+      }
+
+      else if (e.data === "qr") {
         setStatus("Disconnected");
+        localStorage.removeItem("wa_status");
         fetchQr();
+      }
+
+      else {
+        const msg = JSON.parse(e.data);
+        setMessages((prev) => [...prev, msg]);
       }
     };
 
-    fetchQr();
+    if (!savedStatus || savedStatus !== "Connected") {
+      fetchQr();
+    }
 
     return () => events.close();
   }, []);
@@ -40,6 +59,7 @@ function HomePage() {
 
   const handleSend = async (e) => {
     e.preventDefault();
+
     if (!number) return alert("Enter number!");
 
     const formData = new FormData();
@@ -59,47 +79,88 @@ function HomePage() {
     }
   };
 
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
   return (
-    <div style={{ maxWidth: "500px", margin: "40px auto", textAlign: "center" }}>
-      <h2>WhatsApp Web UI</h2>
-      <h4>Status: {status}</h4>
+    <div className="wa-main">
 
-      {!status.includes("Connected") && qr && (
-        <div>
-          <p>Scan QR to connect:</p>
-          <img src={qr} alt="QR Code" width="250" />
+      <div className="wa-sidebar">
+
+        <div className="sidebar-header">
+          <div className="profile-circle">U</div>
+          <span className="sidebar-title">WhatsApp Web</span>
         </div>
-      )}
 
-      {status === "Connected" && (
-        <form onSubmit={handleSend} style={{ marginTop: "20px" }}>
-          <input
-            type="text"
-            placeholder="Number (with country code)"
-            value={number}
-            onChange={(e) => setNumber(e.target.value)}
-            required
-            style={{ width: "100%", padding: "8px", marginBottom: "10px" }}
-          />
-          <textarea
-            placeholder="Message"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            style={{ width: "100%", padding: "8px", marginBottom: "10px" }}
-          />
-          {/* <input
-            type="file"
-            accept="image/*,video/*"
-            onChange={(e) => setFile(e.target.files[0])}
-            style={{ marginBottom: "10px" }}
-          /> */}
-          <button type="submit" style={{ padding: "10px 20px" }}>
-            Send
-          </button>
-        </form>
-      )}
+        <div className={`status-box ${status === "Connected" ? "ok" : "not-ok"}`}>
+          <strong>Status:</strong> {status}
+        </div>
+
+        {!status.includes("Connected") && qr && (
+          <div className="qr-area">
+            <p>Scan this QR to Login</p>
+            <img src={qr} alt="qr" />
+          </div>
+        )}
+
+        {status === "Connected" && (
+          <div className="connected-box">
+            <p>🔗 Device Connected!</p>
+          </div>
+        )}
+      </div>
+
+      <div className="wa-chat-area">
+
+        <div className="chat-header">
+          {status === "Connected" ? (
+            <h3>Send Message</h3>
+          ) : (
+            <h3>Please scan QR to continue</h3>
+          )}
+        </div>
+
+        <div className="chat-content">
+          {messages.map((msg, idx) => (
+            <div
+              key={idx}
+              className={`chat-bubble ${msg.type === "incoming" ? "incoming" : "outgoing"
+                }`}
+            >
+              <span className="bubble-text">
+                {msg.type === "incoming"
+                  ? `From: ${msg.from}\n${msg.body}`
+                  : `${msg.body}`}
+              </span>
+            </div>
+          ))}
+          <div ref={messagesEndRef}></div>
+        </div>
+
+        {status === "Connected" && (
+          <form className="chat-input-box" onSubmit={handleSend}>
+            <input
+              type="text"
+              placeholder="Enter number (with country code)"
+              value={number}
+              onChange={(e) => setNumber(e.target.value)}
+              required
+            />
+
+            <textarea
+              placeholder="Type your message..."
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+            />
+
+            <button type="submit">Send</button>
+          </form>
+        )}
+      </div>
     </div>
   );
+
 }
 
 export default HomePage;

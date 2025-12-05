@@ -22,8 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-.env
-# flie
-.wwebjs_auth
+
+uploads
 .wwebjs_cache
-uploads 
+.wwebjs_auth

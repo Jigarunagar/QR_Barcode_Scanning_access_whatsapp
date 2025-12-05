@@ -1,6 +1,12 @@
 import React, { useEffect, useState, useRef } from "react";
 import { HiOutlineUserCircle } from "react-icons/hi2";
 import axios from "axios";
+import CryptoJS from "crypto-js";
+import { IoCallOutline } from "react-icons/io5";
+import { IoVideocamOutline } from "react-icons/io5";
+import { FiSearch } from "react-icons/fi";
+
+
 
 function HomePage() {
   const [qr, setQr] = useState("");
@@ -9,15 +15,22 @@ function HomePage() {
   const [message, setMessage] = useState("");
   const [file, setFile] = useState(null);
   const [messages, setMessages] = useState([]);
-  const messagesEndRef = useRef(null);
   const [userName, setUserName] = useState("");
+  const [contacts, setContacts] = useState([]);
+  const [selectedChat, setSelectedChat] = useState(null);
+  const [chatHistory, setChatHistory] = useState({});
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const messagesEndRef = useRef(null);
+
 
   useEffect(() => {
-    // Load saved username on page load
+    const savedContacts = getContactsFromLocal();
+    if (savedContacts.length > 0) setContacts(savedContacts);
+
     const savedName = localStorage.getItem("wa_userName");
     if (savedName) setUserName(savedName);
 
-    // Load status
     const savedStatus = localStorage.getItem("wa_status");
     if (savedStatus) setStatus(savedStatus);
 
@@ -28,27 +41,25 @@ function HomePage() {
         setStatus("Connected");
         localStorage.setItem("wa_status", "Connected");
         setQr("");
-      }
-
-      else if (e.data === "qr") {
+        loadContacts(); // Load contacts on connect
+      } else if (e.data === "qr") {
         setStatus("Disconnected");
         localStorage.removeItem("wa_status");
+        localStorage.removeItem("wa_contacts");
+        localStorage.removeItem("wa_chatHistory");
+        localStorage.removeItem("wa_selectedChat");
+        localStorage.removeItem("wa_userName");
         fetchQr();
-      }
-
-      else {
+      } else {
         try {
           const msg = JSON.parse(e.data);
-
-          // SAVE username when received from backend
           if (msg.type === "user-info") {
             setUserName(msg.name);
-            localStorage.setItem("wa_userName", msg.name);  // STORE NAME
+            localStorage.setItem("wa_userName", msg.name);
             return;
           }
-
           setMessages((prev) => [...prev, msg]);
-
+          saveIncomingMessage(msg);
         } catch (err) { }
       }
     };
@@ -59,6 +70,36 @@ function HomePage() {
 
     return () => events.close();
   }, []);
+
+  const saveIncomingMessage = (msg) => {
+    const clean = msg.from.replace("@c.us", "").replace("@s.whatsapp.net", "");
+
+    setChatHistory(prev => {
+      const updated = {
+        ...prev,
+        [clean]: [...(prev[clean] || []), msg]
+      };
+      saveChatHistoryToLocal(updated);
+      return updated;
+    });
+  };
+
+
+  const saveOutgoingMessage = (to, body) => {
+    const clean = to.replace("@c.us", "").replace("@s.whatsapp.net", "");
+
+    setChatHistory(prev => {
+      const updated = {
+        ...prev,
+        [clean]: [
+          ...(prev[clean] || []),
+          { type: "outgoing", body, to }
+        ]
+      };
+      saveChatHistoryToLocal(updated);
+      return updated;
+    });
+  };
 
   const fetchQr = async () => {
     try {
@@ -86,7 +127,7 @@ function HomePage() {
       const res = await axios.post("http://localhost:3000/send", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      alert(res.data);
+      saveOutgoingMessage(number, message);
       setMessage("");
       setFile(null);
     } catch (err) {
@@ -94,42 +135,82 @@ function HomePage() {
     }
   };
 
-  const handleReply = async (msgId) => {
-    const replyText = prompt("Enter reply message:");
-    if (!replyText) return;
+  const loadContacts = async () => {
+    try {
+      const res = await axios.get("http://localhost:3000/contacts");
 
-    await axios.post("http://localhost:3000/reply", {
-      quotedId: msgId,
-      message: replyText,
-    });
+      const cleanedContacts = res.data.map(c => ({
+        ...c,
+        number: c.number.replace("@c.us", "").replace("@s.whatsapp.net", "")
+      }));
+
+      setContacts(cleanedContacts);
+      saveContactsToLocal(cleanedContacts);
+    } catch (err) {
+      console.log(err);
+    }
   };
 
-  const handleForward = async (msgId) => {
-    const number = prompt("Enter recipient number:");
-    if (!number) return;
-
-    await axios.post("http://localhost:3000/forward", {
-      messageId: msgId,
-      number,
-    });
+  const saveContactsToLocal = (contacts) => {
+    const encrypted = CryptoJS.AES.encrypt(JSON.stringify(contacts), "my_key").toString();
+    localStorage.setItem("wa_contacts", encrypted);
   };
 
-  const handleDelete = async (msgId) => {
-    const everyone = window.confirm("Delete for everyone?");
-    await axios.post("http://localhost:3000/delete", {
-      messageId: msgId,
-      everyone,
-    });
+  const filteredContacts = contacts.filter(contact =>
+    contact.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    contact.number.includes(searchTerm)
+  );
+  const getContactsFromLocal = () => {
+    const encrypted = localStorage.getItem("wa_contacts");
+    if (!encrypted) return [];
+    try {
+      const bytes = CryptoJS.AES.decrypt(encrypted, "my_key");
+      return JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
+    } catch {
+      return [];
+    }
+  };
+  const saveChatHistoryToLocal = (data) => {
+    const encrypted = CryptoJS.AES.encrypt(JSON.stringify(data), "my_chat_key").toString();
+    localStorage.setItem("wa_chatHistory", encrypted);
   };
 
-  const handleReact = async (msgId) => {
-    const emoji = prompt("Enter emoji to react:");
-    await axios.post("http://localhost:3000/react", { messageId: msgId, emoji });
+  const getChatHistoryFromLocal = () => {
+    const encrypted = localStorage.getItem("wa_chatHistory");
+    if (!encrypted) return {};
+
+    try {
+      const bytes = CryptoJS.AES.decrypt(encrypted, "my_chat_key");
+      return JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
+    } catch {
+      return {};
+    }
   };
+
+  useEffect(() => {
+    const savedHistory = getChatHistoryFromLocal();
+    setChatHistory(savedHistory);
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    if (selectedChat) {
+      localStorage.setItem("wa_selectedChat", JSON.stringify(selectedChat));
+    }
+  }, [selectedChat]);
+
+  useEffect(() => {
+    const savedChat = localStorage.getItem("wa_selectedChat");
+    if (savedChat) {
+      const chat = JSON.parse(savedChat);
+      setSelectedChat(chat);
+      setNumber(chat.number);
+    }
+  }, []);
+
 
   return (
     <div className="wa-main">
@@ -138,6 +219,34 @@ function HomePage() {
         <div className="sidebar-header">
           <div className="profile-circle">W</div>
           <span className="sidebar-title">WhatsApp Web</span>
+        </div>
+        {status === "Connected" && (
+          <>
+            <div className="search">
+              <FiSearch className="search-icon" />
+              <input
+                type="text"
+                placeholder="Number & Name Enter..."
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <h4>Your Contacts</h4>
+          </>
+        )}
+        <div className="contact-list">
+          {filteredContacts.map((c, index) => (
+            <div
+              key={index}
+              className="contact-item"
+              onClick={() => {
+                setSelectedChat(c);
+                setNumber(c.number);
+              }}
+            >
+              <HiOutlineUserCircle size={22} />
+              <span>{c.name}</span>
+            </div>
+          ))}
         </div>
 
         <div className={`status-box ${status === "Connected" ? "ok" : "not-ok"}`}>
@@ -150,21 +259,23 @@ function HomePage() {
             <img src={qr} alt="qr" />
           </div>
         )}
-
-        {status === "Connected" && (
-          <div className="connected-box">
-            <p>🔗 Device Connected!</p>
-          </div>
-        )}
       </div>
 
       <div className="wa-chat-area">
 
         <div className="chat-header">
-          {status === "Connected" ? (
-            <h3><HiOutlineUserCircle />{userName}</h3>
+          {selectedChat ? (
+            <>
+              <h3><HiOutlineUserCircle /> {selectedChat.name}</h3>
+
+              <div className="header-actions">
+                <IoVideocamOutline />
+                <IoCallOutline />
+                <FiSearch />
+              </div>
+            </>
           ) : (
-            <h3>Please scan QR to continue</h3>
+            <h3>Select contact</h3>
           )}
         </div>
 
@@ -176,42 +287,27 @@ function HomePage() {
             </div>
           )}
 
-          {messages.map((msg, idx) => (
-            <div
-              key={idx}
-              className={`chat-bubble ${msg.type === "incoming" ? "incoming" : "outgoing"}`}
-            >
-              <span className="bubble-text">
-                {msg.type === "incoming" ? `From: ${msg.from}\n${msg.body}` : msg.body}
-              </span>
-
-              {status === "Connected" && (
-                <div className="bubble-actions">
-                  <button onClick={() => handleReply(msg.id)}>Reply</button>
-                  <button onClick={() => handleForward(msg.id)}>Forward</button>
-                  <button onClick={() => handleDelete(msg.id)}>Delete</button>
-                  <button onClick={() => handleReact(msg.id)}>React</button>
-                </div>
-              )}
-            </div>
-          ))}
+          {selectedChat &&
+            chatHistory[selectedChat.number] &&
+            chatHistory[selectedChat.number].map((msg, idx) => (
+              <div
+                key={idx}
+                className={`chat-bubble ${msg.type === "incoming" ? "incoming" : "outgoing"}`}
+              >
+                <span className="bubble-text">
+                  {msg.body}
+                </span>
+              </div>
+            ))}
 
           <div ref={messagesEndRef}></div>
         </div>
 
 
-        {status === "Connected" && (
+        {status === "Connected" && selectedChat && (
           <form className="chat-input-box" onSubmit={handleSend}>
-            <input
-              type="text"
-              placeholder="Enter number (with country code)"
-              value={number}
-              onChange={(e) => setNumber(e.target.value)}
-              required
-            />
-
             <textarea
-              placeholder="Type your message..."
+              placeholder="Write a message..."
               value={message}
               onChange={(e) => setMessage(e.target.value)}
             />
